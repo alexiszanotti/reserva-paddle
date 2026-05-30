@@ -1,4 +1,4 @@
-name: Reserva automática de pádel
+name: Reserva automatica de padel
 
 on:
   schedule:
