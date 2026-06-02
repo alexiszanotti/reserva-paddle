@@ -14,6 +14,9 @@ jobs:
     timeout-minutes: 10
 
     steps:
+      - name: Esperar hasta 00:00:01 CEST
+        run: sleep 1
+
       - name: Checkout
         uses: actions/checkout@v4
 
