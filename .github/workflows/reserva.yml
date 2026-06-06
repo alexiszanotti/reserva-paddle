@@ -2,11 +2,9 @@ name: Reserva automatica de padel
 
 on:
   schedule:
-    # Martes a las 00:00:01 CEST = lunes 22:00 UTC
-    - cron: "0 22 * * 1"
-    # Jueves a las 00:00:01 CEST = miércoles 22:00 UTC
-    - cron: "0 22 * * 3"
-  workflow_dispatch: # permite ejecución manual para pruebas
+    - cron: '0 0 * * 2,4'
+      timezone: Europe/Madrid
+  workflow_dispatch:
 
 jobs:
   reservar:
@@ -14,17 +12,14 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Esperar hasta 00:00:01 CEST
-        run: sleep 1
-
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
-          cache: "npm"
+          node-version: '22'
+          cache: 'npm'
 
       - name: Instalar dependencias
         run: npm ci
@@ -42,7 +37,7 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           RESERVA_HORA: ${{ secrets.RESERVA_HORA }}
-          FORCE: "false"
+          FORCE: 'false'
         run: npm start
 
       - name: Guardar screenshots (debug)
