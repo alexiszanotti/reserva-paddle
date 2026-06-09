@@ -1,7 +1,7 @@
-import { diaSemanaMadrid, fechaObjetivo, proximoMartesJueves, formatearFecha, nombreDia } from "./utils.js";
-import { cfg } from "./config.js";
-import { reservar } from "./scraper.js";
-import { enviarEmail } from "./mailer.js";
+import { diaSemanaMadrid, fechaObjetivo, proximoMartesJueves, formatearFecha, nombreDia } from "./utils";
+import { cfg } from "./config";
+import { reservar } from "./scraper";
+import { enviarEmail } from "./mailer";
 
 async function main() {
   console.log("═══════════════════════════════════════════");
