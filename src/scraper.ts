@@ -1,6 +1,6 @@
 import { chromium, type Browser, type Page } from 'playwright';
-import { cfg } from './config.js';
-import { formatearFecha } from './utils.js';
+import { cfg } from './config';
+import { formatearFecha } from './utils';
 
 const BASE = cfg.baseUrl;
 const RESERVAR_PATH = '/ReservarPista.aspx';
