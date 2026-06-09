@@ -2,5 +2,7 @@
   "crons": [{
     "path": "/api/cron/reserva",
     "schedule": "0 0 * * 2,4"
-  }]
+  }],
+  "buildCommand": "true",
+  "outputDirectory": ".vercel"
 }
