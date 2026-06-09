@@ -2,6 +2,5 @@
   "crons": [{
     "path": "/api/cron/reserva",
     "schedule": "0 0 * * 2,4"
-  }],
-  "buildCommand": "npm run vercel-build"
+  }]
 }
