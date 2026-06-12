@@ -1,9 +1,11 @@
 name: Reserva automatica de padel
 
 on:
+  # GitHub Actions evalua el cron siempre en UTC (no soporta "timezone").
+  # 22h y 23h UTC cubren los dos offsets de Madrid (CEST/CET) para que
+  # una de las dos ejecuciones caiga exactamente a las 00:00 en Madrid.
   schedule:
-    - cron: '0 0 * * 2,4'
-      timezone: Europe/Madrid
+    - cron: '0 22,23 * * 1,3'
   workflow_dispatch:
 
 jobs:
@@ -36,7 +38,6 @@ jobs:
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
-          RESERVA_HORA: ${{ secrets.RESERVA_HORA }}
           FORCE: 'false'
         run: npm start
 

@@ -1,19 +1,20 @@
-import { diaSemanaMadrid, fechaObjetivo, proximoMartesJueves, formatearFecha, nombreDia } from "./utils";
+import { diaSemanaMadrid, fechaMadrid, fechaObjetivo, proximoMartesJueves, formatearFecha, nombreDia } from "./utils";
 import { cfg } from "./config";
-import { reservar } from "./scraper";
+import { reservar, SLOTS_PRIORIDAD } from "./scraper";
 import { enviarEmail } from "./mailer";
 
 async function main() {
   console.log("═══════════════════════════════════════════");
   console.log("  RESERVA AUTOMÁTICA DE PÁDEL");
-  console.log("  HayPistaLibre.net → Martes y Jueves " + cfg.reserva.hora);
+  console.log("  HayPistaLibre.net → Martes y Jueves " + SLOTS_PRIORIDAD.join(" / "));
   if (cfg.force) console.log("  ⚡ MODO FORCE ACTIVADO");
   console.log("═══════════════════════════════════════════");
 
   const diaSemana = diaSemanaMadrid();
   const hoy = nombreDia(diaSemana);
+  const horaActual = fechaMadrid().getHours();
 
-  console.log(`\n📅 Hoy es ${hoy} (día ${diaSemana}) en zona horaria Europe/Madrid`);
+  console.log(`\n📅 Hoy es ${hoy} (día ${diaSemana}), ${horaActual}h en zona horaria Europe/Madrid`);
 
   let fechaObj: Date;
 
@@ -26,6 +27,15 @@ async function main() {
       console.log(`   ⏭ No es martes ni jueves → nada que hacer.`);
       return;
     }
+
+    // El cron se dispara a las 22h y 23h UTC para cubrir el cambio de
+    // horario de verano/invierno en Madrid; solo la ejecución que cae
+    // exactamente a las 00h en Madrid hace la reserva (evita duplicados).
+    if (horaActual !== 0) {
+      console.log(`   ⏭ Son las ${horaActual}h en Madrid, no las 00h → disparo duplicado por DST, nada que hacer.`);
+      return;
+    }
+
     fechaObj = fechaObjetivo();
 
     // Verificar que la fecha objetivo cae en martes o jueves
@@ -39,18 +49,16 @@ async function main() {
   const fechaObjStr = formatearFecha(fechaObj);
   console.log(`   🎯 Fecha objetivo: ${fechaObjStr} (${nombreDia(fechaObj.getDay())})`);
 
-  const mensaje = await reservar(fechaObj);
-
-  const exito = mensaje.startsWith("Reserva confirmada");
+  const resultado = await reservar(fechaObj);
 
   await enviarEmail({
-    exito,
+    exito: resultado.exito,
     fecha: fechaObjStr,
-    hora: cfg.reserva.hora,
-    mensaje,
+    hora: resultado.hora,
+    mensaje: resultado.mensaje,
   });
 
-  if (!exito) {
+  if (!resultado.exito) {
     process.exitCode = 1;
   }
 }

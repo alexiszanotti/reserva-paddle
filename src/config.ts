@@ -22,9 +22,6 @@ export const cfg = {
   email: {
     to: (process.env.EMAIL_TO || "").split(",").map((e) => e.trim()).filter(Boolean),
   },
-  reserva: {
-    hora: process.env.RESERVA_HORA || "18:30",
-  },
   baseUrl: "https://haypistalibre.net",
   force: process.env.FORCE === "true",
 } as const;

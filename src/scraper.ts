@@ -5,13 +5,22 @@ import { formatearFecha } from './utils';
 const BASE = cfg.baseUrl;
 const RESERVAR_PATH = '/ReservarPista.aspx';
 
-export async function reservar(fecha: Date): Promise<string> {
+// Orden de preferencia: se intenta primero el horario más tardío y,
+// si no hay disponibilidad, se cae al siguiente de la lista.
+export const SLOTS_PRIORIDAD = ['20:00-21:30', '18:30-20:00'];
+
+export interface ResultadoReserva {
+  exito: boolean;
+  hora: string;
+  mensaje: string;
+}
+
+export async function reservar(fecha: Date): Promise<ResultadoReserva> {
   const fechaStr = formatearFecha(fecha);
-  const horaStr = cfg.reserva.hora;
   let browser: Browser | null = null;
 
   try {
-    console.log(`\n🎾 Iniciando reserva para ${fechaStr} a las ${horaStr}`);
+    console.log(`\n🎾 Iniciando reserva para ${fechaStr} (horarios: ${SLOTS_PRIORIDAD.join(', ')})`);
 
     browser = await chromium.launch({ headless: true });
     const context = await browser.newContext({
@@ -27,28 +36,37 @@ export async function reservar(fecha: Date): Promise<string> {
     // ── Paso 2: Seleccionar fecha ──
     await seleccionarFecha(page, fecha, fechaStr);
 
-    // ── Paso 3: Ver disponibilidad de la pista ──
-    await verDisponibilidad(page);
+    await page.screenshot({ path: 'debug-03-disponibilidad.png', fullPage: true });
 
-    // ── Paso 4: Seleccionar hora 18:30 ──
-    await seleccionarHora(page);
+    // ── Pasos 3-6: probar cada horario por orden de preferencia ──
+    for (const rangoHora of SLOTS_PRIORIDAD) {
+      const disponible = await verDisponibilidad(page, rangoHora);
+      if (!disponible) {
+        console.log(`  ⏭ Horario ${rangoHora} no disponible, probando siguiente...`);
+        continue;
+      }
 
-    // ── Paso 5: Hacer clic en Reservar ──
-    await clicReservar(page);
+      await seleccionarHora(page, rangoHora);
+      await clicReservar(page);
 
-    // ── Paso 6: Verificar resultado ──
-    const resultado = await verificarResultado(page, cfg.hpl.usuario.split('@')[0]);
+      const resultado = await verificarResultado(page, cfg.hpl.usuario.split('@')[0]);
 
-    if (!resultado.exito) {
-      throw new Error(resultado.mensaje);
+      if (resultado.exito) {
+        console.log(`✅ Reserva completada: ${fechaStr} ${rangoHora}`);
+      } else {
+        console.error(`❌ Error: ${resultado.mensaje}`);
+      }
+
+      return { exito: resultado.exito, hora: rangoHora, mensaje: resultado.mensaje };
     }
 
-    console.log(`✅ Reserva completada: ${fechaStr} ${horaStr}`);
-    return `Reserva confirmada para el ${fechaStr} a las ${horaStr}.`;
+    const mensaje = `No hay disponibilidad en ${SLOTS_PRIORIDAD.join(' ni en ')}.`;
+    console.log(`  ⏭ ${mensaje}`);
+    return { exito: false, hora: SLOTS_PRIORIDAD.join(' / '), mensaje };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`❌ Error: ${msg}`);
-    return msg;
+    return { exito: false, hora: SLOTS_PRIORIDAD.join(' / '), mensaje: msg };
   } finally {
     if (browser) await browser.close();
   }
@@ -114,28 +132,23 @@ async function seleccionarFecha(page: Page, fecha: Date, fechaStr: string): Prom
 //  PASO 3: VER DISPONIBILIDAD
 // ════════════════════════════════════════════════════════════
 
-async function verDisponibilidad(page: Page): Promise<void> {
-  console.log('  → Buscando disponibilidad de pistas...');
-  const rangoHora = '18:30-20:00';
-  console.log(`    Buscando slot con rango: ${rangoHora}`);
+async function verDisponibilidad(page: Page, rangoHora: string): Promise<boolean> {
+  console.log(`  → Comprobando disponibilidad de ${rangoHora}...`);
 
   const slot = page.locator(
     `div.Reservable div.Cabecera.HoraReserva span:has-text("${rangoHora}")`,
   );
 
-  await slot.waitFor({ state: 'visible', timeout: 10000 });
-  console.log(`  → Slot ${rangoHora} encontrado y disponible.`);
-  await page.screenshot({ path: 'debug-03-disponibilidad.png', fullPage: true });
+  const disponible = await slot.first().isVisible().catch(() => false);
+  console.log(disponible ? `  → Slot ${rangoHora} disponible.` : `  → Slot ${rangoHora} no disponible.`);
+  return disponible;
 }
 
 // ════════════════════════════════════════════════════════════
 //  PASO 4: SELECCIONAR HORA
 // ════════════════════════════════════════════════════════════
 
-async function seleccionarHora(page: Page): Promise<void> {
-  // const rangoHora = '18:30-20:00';
-  const rangoHora = '13:30-15:00';
-
+async function seleccionarHora(page: Page, rangoHora: string): Promise<void> {
   console.log(`  → Seleccionando horario ${rangoHora}...`);
 
   const slot = page.locator(
