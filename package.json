@@ -6,6 +6,7 @@
     "build": "tsc",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
+    "check": "tsx src/check.ts",
     "vercel-build": "tsc"
   },
   "dependencies": {

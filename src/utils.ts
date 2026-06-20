@@ -31,10 +31,26 @@ export function nombreDia(n: number): string {
   return DIAS_SEMANA[n] ?? "?";
 }
 
-export function fechaObjetivo(): Date {
-  const hoy = fechaMadrid();
-  hoy.setDate(hoy.getDate() + 7);
-  return hoy;
+// Fecha a reservar (7 días vista). El cron dispara la noche del lunes/miércoles
+// y el scraper espera hasta medianoche, así que la "sesión" es el martes/jueves
+// que estamos a punto de cruzar (o acabamos de cruzar): de tarde/noche → mañana.
+export function fechaReserva(ahora: Date = fechaMadrid()): Date {
+  const sesion = new Date(ahora);
+  if (ahora.getHours() >= 12) sesion.setDate(sesion.getDate() + 1);
+  sesion.setDate(sesion.getDate() + 7);
+  return sesion;
+}
+
+// Milisegundos hasta la próxima medianoche en Madrid (independiente de la TZ
+// del runner y del cambio horario; usa el reloj real, no el hack de fechaMadrid).
+export function msHastaMedianocheMadrid(ahora: Date = new Date()): number {
+  const p = new Intl.DateTimeFormat("en-GB", {
+    timeZone: TZ, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+  }).formatToParts(ahora);
+  const val = (t: string) => parseInt(p.find((x) => x.type === t)?.value ?? "0", 10);
+  const h = val("hour") % 24; // algunas impl. devuelven "24" a medianoche
+  const transcurridoMs = ((h * 60 + val("minute")) * 60 + val("second")) * 1000 + ahora.getMilliseconds();
+  return 24 * 3600 * 1000 - transcurridoMs;
 }
 
 export function proximoMartesJueves(): Date {

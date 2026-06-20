@@ -9,7 +9,9 @@ on:
 jobs:
   reservar:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # El job espera hasta medianoche Madrid: en invierno el cron dispara ~70 min
+    # antes, así que el timeout debe cubrir esa espera + la reserva.
+    timeout-minutes: 90
 
     steps:
       - name: Checkout

@@ -1,6 +1,6 @@
 import { chromium, type Browser, type Page } from 'playwright';
 import { cfg } from './config';
-import { formatearFecha } from './utils';
+import { formatearFecha, msHastaMedianocheMadrid } from './utils';
 
 const BASE = cfg.baseUrl;
 const RESERVAR_PATH = '/ReservarPista.aspx';
@@ -15,7 +15,7 @@ export interface ResultadoReserva {
   mensaje: string;
 }
 
-export async function reservar(fecha: Date): Promise<ResultadoReserva> {
+export async function reservar(fecha: Date, esperarMedianoche = false): Promise<ResultadoReserva> {
   const fechaStr = formatearFecha(fecha);
   let browser: Browser | null = null;
 
@@ -30,8 +30,11 @@ export async function reservar(fecha: Date): Promise<ResultadoReserva> {
     const page = await context.newPage();
     page.setDefaultTimeout(15000);
 
-    // ── Paso 1: Login ──
+    // ── Paso 1: Login (pre-warm: se hace con antelación a medianoche) ──
     await login(page);
+
+    // ── Paso 1.5: esperar a las 00:00:00 Madrid (el slot de +7 días abre ahí) ──
+    if (esperarMedianoche) await esperarHastaMedianoche(page);
 
     // ── Paso 2: Seleccionar fecha ──
     await seleccionarFecha(page, fecha, fechaStr);
@@ -70,6 +73,43 @@ export async function reservar(fecha: Date): Promise<ResultadoReserva> {
   } finally {
     if (browser) await browser.close();
   }
+}
+
+// ════════════════════════════════════════════════════════════
+//  ESPERA HASTA MEDIANOCHE (timing exacto de la reserva)
+// ════════════════════════════════════════════════════════════
+
+// Espera bloqueante hasta las 00:00:00.000 de Madrid y deja la página de
+// reservas recién cargada (el slot de +7 días aparece justo a medianoche).
+// Recarga periódica como keep-alive para no perder la sesión en esperas largas
+// (en invierno el cron dispara ~70 min antes de medianoche).
+async function esperarHastaMedianoche(page: Page): Promise<void> {
+  const KEEPALIVE_MS = 4 * 60 * 1000;
+  let restante = msHastaMedianocheMadrid();
+
+  // Si faltan >12 h para la próxima medianoche, ya la cruzamos (disparo tardío):
+  // no esperar, reservar de inmediato.
+  if (restante > 12 * 3600 * 1000) {
+    console.log('  ⏱ Medianoche ya pasada (disparo tardío) → reservando sin esperar.');
+    return;
+  }
+
+  console.log(`  ⏳ Esperando hasta medianoche Madrid (${Math.round(restante / 1000)} s)...`);
+  while (restante > 1500) {
+    const dormir = Math.min(restante - 1000, KEEPALIVE_MS);
+    await page.waitForTimeout(dormir);
+    if (restante - dormir > 1500) {
+      // keep-alive: recargar la página de reservas para mantener viva la sesión
+      await page.goto(`${BASE}${RESERVAR_PATH}`, { waitUntil: 'networkidle' }).catch(() => {});
+    }
+    restante = msHastaMedianocheMadrid();
+  }
+  // ponytail: busy-wait sub-segundo final (<1.5 s) para precisión; bloquea el
+  // event loop pero la página está ociosa.
+  while (msHastaMedianocheMadrid() > 0) { /* spin */ }
+
+  console.log(`  🎯 Medianoche Madrid: ${new Date().toISOString()} → cargando disponibilidad.`);
+  await page.goto(`${BASE}${RESERVAR_PATH}`, { waitUntil: 'networkidle' });
 }
 
 // ════════════════════════════════════════════════════════════
