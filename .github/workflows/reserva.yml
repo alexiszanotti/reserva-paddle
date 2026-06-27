@@ -3,15 +3,15 @@ name: Reserva automatica de padel
 on:
   # Disparado exclusivamente por el cron de Vercel via workflow_dispatch.
   # workflow_dispatch es inmediato (sin demoras de cola de GitHub).
-  # El handler de Vercel ya filtra por ventana horaria Madrid 23:45-00:45.
   workflow_dispatch:
 
 jobs:
   reservar:
     runs-on: ubuntu-latest
-    # El job espera hasta medianoche Madrid: en invierno el cron dispara ~70 min
-    # antes, así que el timeout debe cubrir esa espera + la reserva.
-    timeout-minutes: 90
+    # El job espera hasta medianoche Madrid. El cron Vercel (21:00 UTC) dispara
+    # ~60 min antes en verano y ~120 min en invierno; el timeout debe cubrir esa
+    # espera + el setup + la reserva.
+    timeout-minutes: 135
 
     steps:
       - name: Checkout
