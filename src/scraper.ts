@@ -105,8 +105,10 @@ async function esperarHastaMedianoche(page: Page): Promise<void> {
     restante = msHastaMedianocheMadrid();
   }
   // ponytail: busy-wait sub-segundo final (<1.5 s) para precisión; bloquea el
-  // event loop pero la página está ociosa.
-  while (msHastaMedianocheMadrid() > 0) { /* spin */ }
+  // event loop pero la página está ociosa. Deadline absoluto: msHastaMedianoche
+  // salta a 24h al cruzar medianoche, así que NO se puede usar como condición.
+  const deadline = Date.now() + msHastaMedianocheMadrid();
+  while (Date.now() < deadline) { /* spin */ }
 
   console.log(`  🎯 Medianoche Madrid: ${new Date().toISOString()} → cargando disponibilidad.`);
   await page.goto(`${BASE}${RESERVAR_PATH}`, { waitUntil: 'networkidle' });
