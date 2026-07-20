@@ -245,6 +245,7 @@ async function verificarResultado(
 ): Promise<{ exito: boolean; mensaje: string }> {
   console.log('  → Verificando resultado...');
   await page.waitForTimeout(2000);
+  await page.screenshot({ path: 'debug-06-verificacion.png', fullPage: true }).catch(() => {});
 
   const bodyText = (await page.textContent('body').catch(() => '')) || '';
   const pageTitle = await page.title();
@@ -252,35 +253,40 @@ async function verificarResultado(
 
   console.log(`    Título: "${pageTitle}" | URL: ${url}`);
 
-  // Éxito: el nombre del usuario aparece en un slot reservado
+  // ponytail: detección FAIL-SAFE. Antes se marcaba éxito por la URL
+  // `ReservarPista.aspx#H\d+`, pero clicReservar() YA garantiza esa URL (lanza
+  // si no llega), así que el check era circular → SIEMPRE reportaba éxito. Y el
+  // fallback final devolvía exito:true "sin mensaje claro". Resultado: mails de
+  // "reservado" falsos. Ahora sólo hay éxito con señal POSITIVA real; en
+  // cualquier otro caso → fallo, con el texto de la página para poder afinar.
+
+  // Señal positiva 1: el usuario aparece en el slot reservado
   if (usuario && bodyText.includes(usuario)) {
     return { exito: true, mensaje: `Reserva confirmada — slot asignado a ${usuario}` };
   }
 
-  // Éxito: la URL contiene un anchor (#H...) que indica slot reservado
-  if (/ReservarPista\.aspx#H\d+/.test(url)) {
-    return { exito: true, mensaje: 'Redirigido a ReservarPista con anchor de slot reservado' };
-  }
-
-  // Éxito: mensajes explícitos
-  if (/reserva\s*(realizada|confirmada|correcta|éxito|ok)/i.test(bodyText)) {
+  // Señal positiva 2: mensaje explícito de confirmación
+  if (/reserva\s*(realizada|confirmada|correcta|con\s*éxito|efectuada)/i.test(bodyText)) {
     return { exito: true, mensaje: 'Reserva confirmada por la web' };
   }
 
-  // Error: mensajes explícitos
-  const errores = [
-    /ya\s*(existe|reservad|ocupad)/i,
-    /no\s*(disponible|ponible)/i,
-    /error/i,
-    /no\s*se\s*(ha\s*)?podido/i,
-    /denegad/i,
+  // Errores explícitos → fallo con motivo
+  const errores: Array<[RegExp, string]> = [
+    [/ya\s*(tiene|existe|hay).{0,30}reserv/i, 'Ya existe una reserva (límite/duplicado)'],
+    [/l[íi]mite|m[áa]ximo\s*de\s*reserv/i, 'Límite de reservas alcanzado'],
+    [/no\s*(est[áa]\s*)?disponible|ocupad/i, 'Slot ya no disponible'],
+    [/no\s*se\s*(ha\s*)?podido|denegad|fallo|error/i, 'Reserva denegada por la web'],
   ];
-  for (const regex of errores) {
+  for (const [regex, motivo] of errores) {
     if (regex.test(bodyText)) {
-      return { exito: false, mensaje: `Error detectado: ${bodyText.substring(0, 300)}` };
+      return { exito: false, mensaje: `${motivo} — ${bodyText.replace(/\s+/g, ' ').trim().substring(0, 300)}` };
     }
   }
 
-  console.log('  ⚠ Sin mensaje claro de confirmación o error.');
-  return { exito: true, mensaje: 'Reserva aparentemente exitosa (sin mensaje claro)' };
+  // Sin confirmación positiva ni error conocido: NO asumir éxito.
+  console.log('  ⚠ Sin confirmación positiva → se reporta FALLO (revisar debug-06).');
+  return {
+    exito: false,
+    mensaje: `Sin confirmación de reserva. Título: "${pageTitle}". Texto: ${bodyText.replace(/\s+/g, ' ').trim().substring(0, 300)}`,
+  };
 }
