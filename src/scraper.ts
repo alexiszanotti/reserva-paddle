@@ -20,7 +20,9 @@ export async function reservar(fecha: Date, esperarMedianoche = false): Promise<
   let browser: Browser | null = null;
 
   try {
-    console.log(`\n🎾 Iniciando reserva para ${fechaStr} (horarios: ${SLOTS_PRIORIDAD.join(', ')})`);
+    console.log(
+      `\n🎾 Iniciando reserva para ${fechaStr} (horarios: ${SLOTS_PRIORIDAD.join(', ')})`,
+    );
 
     browser = await chromium.launch({ headless: true });
     const context = await browser.newContext({
@@ -52,7 +54,7 @@ export async function reservar(fecha: Date, esperarMedianoche = false): Promise<
       await seleccionarHora(page, rangoHora);
       await clicReservar(page);
 
-      const resultado = await verificarResultado(page, cfg.hpl.usuario.split('@')[0]);
+      const resultado = await verificarResultado(page, rangoHora);
 
       if (resultado.exito) {
         console.log(`✅ Reserva completada: ${fechaStr} ${rangoHora}`);
@@ -108,7 +110,9 @@ async function esperarHastaMedianoche(page: Page): Promise<void> {
   // event loop pero la página está ociosa. Deadline absoluto: msHastaMedianoche
   // salta a 24h al cruzar medianoche, así que NO se puede usar como condición.
   const deadline = Date.now() + msHastaMedianocheMadrid();
-  while (Date.now() < deadline) { /* spin */ }
+  while (Date.now() < deadline) {
+    /* spin */
+  }
 
   console.log(`  🎯 Medianoche Madrid: ${new Date().toISOString()} → cargando disponibilidad.`);
   await page.goto(`${BASE}${RESERVAR_PATH}`, { waitUntil: 'networkidle' });
@@ -181,8 +185,13 @@ async function verDisponibilidad(page: Page, rangoHora: string): Promise<boolean
     `div.Reservable div.Cabecera.HoraReserva span:has-text("${rangoHora}")`,
   );
 
-  const disponible = await slot.first().isVisible().catch(() => false);
-  console.log(disponible ? `  → Slot ${rangoHora} disponible.` : `  → Slot ${rangoHora} no disponible.`);
+  const disponible = await slot
+    .first()
+    .isVisible()
+    .catch(() => false);
+  console.log(
+    disponible ? `  → Slot ${rangoHora} disponible.` : `  → Slot ${rangoHora} no disponible.`,
+  );
   return disponible;
 }
 
@@ -241,7 +250,7 @@ async function clicReservar(page: Page): Promise<void> {
 
 async function verificarResultado(
   page: Page,
-  usuario: string,
+  rangoHora: string,
 ): Promise<{ exito: boolean; mensaje: string }> {
   console.log('  → Verificando resultado...');
   await page.waitForTimeout(2000);
@@ -253,21 +262,19 @@ async function verificarResultado(
 
   console.log(`    Título: "${pageTitle}" | URL: ${url}`);
 
-  // ponytail: detección FAIL-SAFE. Antes se marcaba éxito por la URL
-  // `ReservarPista.aspx#H\d+`, pero clicReservar() YA garantiza esa URL (lanza
-  // si no llega), así que el check era circular → SIEMPRE reportaba éxito. Y el
-  // fallback final devolvía exito:true "sin mensaje claro". Resultado: mails de
-  // "reservado" falsos. Ahora sólo hay éxito con señal POSITIVA real; en
-  // cualquier otro caso → fallo, con el texto de la página para poder afinar.
-
-  // Señal positiva 1: el usuario aparece en el slot reservado
-  if (usuario && bodyText.includes(usuario)) {
-    return { exito: true, mensaje: `Reserva confirmada — slot asignado a ${usuario}` };
-  }
-
-  // Señal positiva 2: mensaje explícito de confirmación
-  if (/reserva\s*(realizada|confirmada|correcta|con\s*éxito|efectuada)/i.test(bodyText)) {
-    return { exito: true, mensaje: 'Reserva confirmada por la web' };
+  const slotReservado = page.locator(
+    `div.Reservada:has(div.Cabecera.HoraReserva:has-text("${rangoHora}"))`,
+  );
+  if (
+    await slotReservado
+      .first()
+      .isVisible()
+      .catch(() => false)
+  ) {
+    return {
+      exito: true,
+      mensaje: `Reserva confirmada — slot ${rangoHora} marcado como Reservada`,
+    };
   }
 
   // Errores explícitos → fallo con motivo
@@ -279,7 +286,10 @@ async function verificarResultado(
   ];
   for (const [regex, motivo] of errores) {
     if (regex.test(bodyText)) {
-      return { exito: false, mensaje: `${motivo} — ${bodyText.replace(/\s+/g, ' ').trim().substring(0, 300)}` };
+      return {
+        exito: false,
+        mensaje: `${motivo} — ${bodyText.replace(/\s+/g, ' ').trim().substring(0, 300)}`,
+      };
     }
   }
 
