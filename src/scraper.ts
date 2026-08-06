@@ -5,9 +5,10 @@ import { formatearFecha, msHastaMedianocheMadrid } from './utils';
 const BASE = cfg.baseUrl;
 const RESERVAR_PATH = '/ReservarPista.aspx';
 
-// Orden de preferencia: se intenta primero el horario más tardío y,
-// si no hay disponibilidad, se cae al siguiente de la lista.
 export const SLOTS_PRIORIDAD = ['20:00-21:30', '18:30-20:00'];
+
+export const filaHistorico = (fechaStr: string, horaInicio: string) =>
+  `table tr:has(td:nth-child(2):has-text("${fechaStr}")):has(td:nth-child(3):text-is("${horaInicio}"))`;
 
 export interface ResultadoReserva {
   exito: boolean;
@@ -54,7 +55,7 @@ export async function reservar(fecha: Date, esperarMedianoche = false): Promise<
       await seleccionarHora(page, rangoHora);
       await clicReservar(page);
 
-      const resultado = await verificarResultado(page, rangoHora);
+      const resultado = await verificarResultado(page, fecha, rangoHora);
 
       if (resultado.exito) {
         console.log(`✅ Reserva completada: ${fechaStr} ${rangoHora}`);
@@ -235,13 +236,11 @@ async function clicReservar(page: Page): Promise<void> {
   await boton.waitFor({ state: 'visible', timeout: 10000 });
   console.log('    Botón input[type="submit"][value="Reservar"] encontrado.');
 
-  await Promise.all([
-    page.waitForURL(/ReservarPista\.aspx#H\d+/, { timeout: 15000 }),
-    boton.click(),
-  ]);
+  await boton.click();
+  await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
 
   await page.screenshot({ path: 'debug-05-tras-reservar.png', fullPage: true });
-  console.log('  → Reserva confirmada, redirigido a ReservarPista.');
+  console.log(`  → Formulario enviado. URL tras reservar: ${page.url()}`);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -250,30 +249,32 @@ async function clicReservar(page: Page): Promise<void> {
 
 async function verificarResultado(
   page: Page,
+  fecha: Date,
   rangoHora: string,
 ): Promise<{ exito: boolean; mensaje: string }> {
   console.log('  → Verificando resultado...');
   await page.waitForTimeout(2000);
   await page.screenshot({ path: 'debug-06-verificacion.png', fullPage: true }).catch(() => {});
 
-  const bodyText = (await page.textContent('body').catch(() => '')) || '';
+  const bodyText = (await page.innerText('body').catch(() => '')) || '';
   const pageTitle = await page.title();
-  const url = page.url();
 
-  console.log(`    Título: "${pageTitle}" | URL: ${url}`);
+  console.log(`    Título: "${pageTitle}" | URL: ${page.url()}`);
 
-  const slotReservado = page.locator(
-    `div.Reservada:has(div.Cabecera.HoraReserva:has-text("${rangoHora}"))`,
-  );
-  if (
-    await slotReservado
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
+  const fechaStr = formatearFecha(fecha);
+  const horaInicio = rangoHora.split('-')[0];
+  await page.goto(`${BASE}/ListadoReservas.aspx`, { waitUntil: 'networkidle' }).catch(() => {});
+
+  const enHistorico = await page
+    .locator(filaHistorico(fechaStr, horaInicio))
+    .first()
+    .isVisible()
+    .catch(() => false);
+
+  if (enHistorico) {
     return {
       exito: true,
-      mensaje: `Reserva confirmada — slot ${rangoHora} marcado como Reservada`,
+      mensaje: `Reserva confirmada — figura en Hist. Reservas (${fechaStr} ${rangoHora})`,
     };
   }
 
