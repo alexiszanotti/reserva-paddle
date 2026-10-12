@@ -5,7 +5,7 @@ import { formatearFecha, msHastaMedianocheMadrid } from './utils';
 const BASE = cfg.baseUrl;
 const RESERVAR_PATH = '/ReservarPista.aspx';
 
-export const SLOTS_PRIORIDAD = ['20:00-21:30', '18:30-20:00'];
+export const SLOTS_PRIORIDAD = ['18:30-20:00', '20:00-21:30'];
 
 export const filaHistorico = (fechaStr: string, horaInicio: string) =>
   `table tr:has(td:nth-child(2):has-text("${fechaStr}")):has(td:nth-child(3):text-is("${horaInicio}"))`;
