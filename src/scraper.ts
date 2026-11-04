@@ -45,28 +45,45 @@ export async function reservar(fecha: Date, esperarMedianoche = false): Promise<
     await page.screenshot({ path: 'debug-03-disponibilidad.png', fullPage: true });
 
     // ── Pasos 3-6: probar cada horario por orden de preferencia ──
-    for (const rangoHora of SLOTS_PRIORIDAD) {
+    const fallos: string[] = [];
+    for (const [indice, rangoHora] of SLOTS_PRIORIDAD.entries()) {
+      if (indice > 0) {
+        // El intento anterior puede dejarnos en Error.aspx o en el historial.
+        await page.goto(`${BASE}${RESERVAR_PATH}`, { waitUntil: 'networkidle' });
+        await seleccionarFecha(page, fecha, fechaStr);
+      }
+
       const disponible = await verDisponibilidad(page, rangoHora);
       if (!disponible) {
+        fallos.push(`${rangoHora}: no disponible`);
         console.log(`  ⏭ Horario ${rangoHora} no disponible, probando siguiente...`);
         continue;
       }
 
-      await seleccionarHora(page, rangoHora);
-      await clicReservar(page);
+      let errorIntento = '';
+      try {
+        await seleccionarHora(page, rangoHora);
+        await clicReservar(page);
+      } catch (err) {
+        errorIntento = err instanceof Error ? err.message : String(err);
+        console.error(`  ⚠ ${rangoHora}: ${errorIntento}`);
+      }
 
+      // Incluso tras un timeout, el servidor puede haber guardado la reserva.
+      // Si el historial no se puede consultar, abortamos para no duplicarla.
       const resultado = await verificarResultado(page, fecha, rangoHora);
 
       if (resultado.exito) {
         console.log(`✅ Reserva completada: ${fechaStr} ${rangoHora}`);
-      } else {
-        console.error(`❌ Error: ${resultado.mensaje}`);
+        return { exito: true, hora: rangoHora, mensaje: resultado.mensaje };
       }
 
-      return { exito: resultado.exito, hora: rangoHora, mensaje: resultado.mensaje };
+      const motivo = errorIntento ? `${errorIntento}. ${resultado.mensaje}` : resultado.mensaje;
+      fallos.push(`${rangoHora}: ${motivo}`);
+      console.error(`  ⚠ ${rangoHora}: ${motivo}`);
     }
 
-    const mensaje = `No hay disponibilidad en ${SLOTS_PRIORIDAD.join(' ni en ')}.`;
+    const mensaje = `No se ha podido reservar. ${fallos.join(' | ')}`;
     console.log(`  ⏭ ${mensaje}`);
     return { exito: false, hora: SLOTS_PRIORIDAD.join(' / '), mensaje };
   } catch (err) {
@@ -254,7 +271,10 @@ async function verificarResultado(
 ): Promise<{ exito: boolean; mensaje: string }> {
   console.log('  → Verificando resultado...');
   await page.waitForTimeout(2000);
-  await page.screenshot({ path: 'debug-06-verificacion.png', fullPage: true }).catch(() => {});
+  await page.screenshot({
+    path: `debug-06-verificacion-${rangoHora.replace(/\D/g, '')}.png`,
+    fullPage: true,
+  }).catch(() => {});
 
   const bodyText = (await page.innerText('body').catch(() => '')) || '';
   const pageTitle = await page.title();
@@ -263,13 +283,19 @@ async function verificarResultado(
 
   const fechaStr = formatearFecha(fecha);
   const horaInicio = rangoHora.split('-')[0];
-  await page.goto(`${BASE}/ListadoReservas.aspx`, { waitUntil: 'networkidle' }).catch(() => {});
+  const historial = await page.goto(`${BASE}/ListadoReservas.aspx`, { waitUntil: 'networkidle' });
+  if (
+    !historial?.ok() ||
+    new URL(page.url()).pathname.toLowerCase() !== '/listadoreservas.aspx' ||
+    await page.locator('#C1_txtCodigo').isVisible()
+  ) {
+    throw new Error('No se pudo consultar el historial; se detienen los intentos para evitar una reserva duplicada.');
+  }
 
   const enHistorico = await page
     .locator(filaHistorico(fechaStr, horaInicio))
     .first()
-    .isVisible()
-    .catch(() => false);
+    .isVisible();
 
   if (enHistorico) {
     return {
@@ -280,6 +306,7 @@ async function verificarResultado(
 
   // Errores explícitos → fallo con motivo
   const errores: Array<[RegExp, string]> = [
+    [/acaba de ser reservada|reservad[ao].{0,30}otro usuario/i, 'La web indica que la pista ya no está disponible'],
     [/ya\s*(tiene|existe|hay).{0,30}reserv/i, 'Ya existe una reserva (límite/duplicado)'],
     [/l[íi]mite|m[áa]ximo\s*de\s*reserv/i, 'Límite de reservas alcanzado'],
     [/no\s*(est[áa]\s*)?disponible|ocupad/i, 'Slot ya no disponible'],
