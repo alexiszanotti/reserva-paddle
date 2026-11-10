@@ -7,7 +7,8 @@ on:
 
 jobs:
   reservar:
-    runs-on: ubuntu-latest
+    # Playwright 1.60 no soporta Chromium en Ubuntu 26.04.
+    runs-on: ubuntu-24.04
     # El job espera hasta medianoche Madrid. El cron Vercel (21:00 UTC) dispara
     # ~60 min antes en verano y ~120 min en invierno; el timeout debe cubrir esa
     # espera + el setup + la reserva.
